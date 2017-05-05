@@ -4,8 +4,8 @@ import os
 import sys
 from warnings import warn
 
+from django.db import OperationalError
 from django.conf import global_settings as defaults
-from django.template.base import add_to_builtins
 
 from mezzanine.utils.timezone import get_best_local_timezone
 
@@ -20,8 +20,16 @@ class SitesAllowedHosts(object):
     def __iter__(self):
         if getattr(self, "_hosts", None) is None:
             from django.contrib.sites.models import Site
-            self._hosts = [s.domain.split(":")[0] for s in Site.objects.all()]
+            try:
+                self._hosts = [
+                    s.domain.split(":")[0] for s in Site.objects.all()
+                ]
+            except OperationalError:
+                return iter([])
         return iter(self._hosts)
+
+    def __add__(self, other):
+        return list(self) + other
 
 
 def set_dynamic_settings(s):
@@ -44,8 +52,10 @@ def set_dynamic_settings(s):
     # Remove a value from a list setting if in the list.
     remove = lambda n, k: s[n].remove(k) if k in s[n] else None
 
-    s["TEMPLATE_DEBUG"] = s.get("TEMPLATE_DEBUG", s.get("DEBUG", False))
-    add_to_builtins("mezzanine.template.loader_tags")
+    # Django 1.10 middleware compatibility
+    MIDDLEWARE_SETTING_NAME = 'MIDDLEWARE' if 'MIDDLEWARE' in s \
+                            and s['MIDDLEWARE'] is not None \
+                            else 'MIDDLEWARE_CLASSES'
 
     if not s.get("ALLOWED_HOSTS", []):
         warn("You haven't defined the ALLOWED_HOSTS settings, which "
@@ -70,7 +80,7 @@ def set_dynamic_settings(s):
     s.setdefault("AUTHENTICATION_BACKENDS", defaults.AUTHENTICATION_BACKENDS)
     s.setdefault("STATICFILES_FINDERS", defaults.STATICFILES_FINDERS)
     tuple_list_settings = ["AUTHENTICATION_BACKENDS", "INSTALLED_APPS",
-                           "MIDDLEWARE_CLASSES", "STATICFILES_FINDERS",
+                           MIDDLEWARE_SETTING_NAME, "STATICFILES_FINDERS",
                            "LANGUAGES", "TEMPLATE_CONTEXT_PROCESSORS"]
     for setting in tuple_list_settings[:]:
         if not isinstance(s.get(setting, []), list):
@@ -79,18 +89,6 @@ def set_dynamic_settings(s):
             # Setting is already a list, so we'll exclude it from
             # the list of settings we'll revert back to tuples.
             tuple_list_settings.remove(setting)
-
-    # From Mezzanine 3.1.2 and onward we added the context processor
-    # for handling the page variable in templates - here we help
-    # upgrading by adding it if missing, with a warning. This helper
-    # can go away eventually.
-    cp = "mezzanine.pages.context_processors.page"
-    if ("mezzanine.pages" in s["INSTALLED_APPS"] and
-            cp not in s["TEMPLATE_CONTEXT_PROCESSORS"]):
-        warn("%s is required in the TEMPLATE_CONTEXT_PROCESSORS setting. "
-             "Adding it now, but you should update settings.py to "
-             "explicitly include it." % cp)
-        append("TEMPLATE_CONTEXT_PROCESSORS", cp)
 
     # Set up cookie messaging if none defined.
     storage = "django.contrib.messages.storage.cookie.CookieStorage"
@@ -137,7 +135,7 @@ def set_dynamic_settings(s):
         # "Explicit setup" section in debug_toolbar docs for more info.
         s["DEBUG_TOOLBAR_PATCH_SETTINGS"] = False
         debug_mw = "debug_toolbar.middleware.DebugToolbarMiddleware"
-        append("MIDDLEWARE_CLASSES", debug_mw)
+        append(MIDDLEWARE_SETTING_NAME, debug_mw)
         s.setdefault("INTERNAL_IPS", ("127.0.0.1",))
 
     # If compressor installed, ensure it's configured and make
@@ -196,7 +194,8 @@ def set_dynamic_settings(s):
 
     # Remove caching middleware if no backend defined.
     if not (s.get("CACHE_BACKEND") or s.get("CACHES")):
-        s["MIDDLEWARE_CLASSES"] = [mw for mw in s["MIDDLEWARE_CLASSES"] if not
+        s[MIDDLEWARE_SETTING_NAME] = [mw for mw in s[MIDDLEWARE_SETTING_NAME]
+                                   if not
                                    (mw.endswith("UpdateCacheMiddleware") or
                                     mw.endswith("FetchFromCacheMiddleware"))]
 
@@ -210,10 +209,10 @@ def set_dynamic_settings(s):
     # Ensure required middleware is installed, otherwise admin
     # becomes inaccessible.
     mw = "django.middleware.locale.LocaleMiddleware"
-    if s["USE_I18N"] and mw not in s["MIDDLEWARE_CLASSES"]:
-        session = s["MIDDLEWARE_CLASSES"].index(
+    if s["USE_I18N"] and mw not in s[MIDDLEWARE_SETTING_NAME]:
+        session = s[MIDDLEWARE_SETTING_NAME].index(
             "django.contrib.sessions.middleware.SessionMiddleware")
-        s["MIDDLEWARE_CLASSES"].insert(session + 1, mw)
+        s[MIDDLEWARE_SETTING_NAME].insert(session + 1, mw)
 
     # Revert tuple settings back to tuples.
     for setting in tuple_list_settings:
@@ -227,10 +226,10 @@ def set_dynamic_settings(s):
             # it's in the project directory and add the path to it.
             if "NAME" in db and os.sep not in db["NAME"]:
                 db_path = os.path.join(s.get("PROJECT_ROOT", ""), db["NAME"])
-                s["DATABASES"][key]["NAME"] = db_path
+                db["NAME"] = db_path
         elif shortname == "mysql":
             # Required MySQL collation for tests.
-            s["DATABASES"][key]["TEST_COLLATION"] = "utf8_general_ci"
+            db.setdefault("TEST", {})["COLLATION"] = "utf8_general_ci"
 
 
 def real_project_name(project_name):

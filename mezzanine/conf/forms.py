@@ -12,7 +12,7 @@ from mezzanine.conf import settings, registry
 from mezzanine.conf.models import Setting
 
 if settings.USE_MODELTRANSLATION:
-    from django.utils.datastructures import SortedDict
+    from collections import OrderedDict
     from modeltranslation.utils import build_localized_fieldname
 
 
@@ -38,7 +38,7 @@ class SettingsForm(forms.Form):
             if setting["editable"]:
                 field_class = FIELD_TYPES.get(setting["type"], forms.CharField)
                 if settings.USE_MODELTRANSLATION and setting["translatable"]:
-                    for code in SortedDict(settings.LANGUAGES):
+                    for code in OrderedDict(settings.LANGUAGES):
                         try:
                             activate(code)
                         except:
@@ -51,7 +51,7 @@ class SettingsForm(forms.Form):
 
     def _init_field(self, setting, field_class, name, code=None):
         """
-        Initialize a field wether it is built with a custom name for a
+        Initialize a field whether it is built with a custom name for a
         specific translation language or not.
         """
         kwargs = {
@@ -110,7 +110,7 @@ class SettingsForm(forms.Form):
                         activate(active_language)
                 else:
                     # Duplicate the value of the setting for every language
-                    for code in SortedDict(settings.LANGUAGES):
+                    for code in OrderedDict(settings.LANGUAGES):
                         setattr(setting_obj,
                                 build_localized_fieldname('value', code),
                                 value)

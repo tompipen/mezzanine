@@ -8,13 +8,13 @@ from datetime import datetime
 from mimetypes import guess_type
 from os.path import join
 
-from django.conf.urls import patterns, url
+from django import forms
+from django.conf.urls import url
 from django.contrib import admin
 from django.contrib.messages import info
 from django.core.files.storage import FileSystemStorage
 from django.http import HttpResponse, HttpResponseRedirect
-from django.shortcuts import render_to_response, get_object_or_404
-from django.template import RequestContext
+from django.shortcuts import render, get_object_or_404
 from django.utils.translation import ungettext, ugettext_lazy as _
 
 from mezzanine.conf import settings
@@ -22,6 +22,7 @@ from mezzanine.core.admin import TabularDynamicInlineAdmin
 from mezzanine.forms.forms import EntriesForm
 from mezzanine.forms.models import Form, Field, FormEntry, FieldEntry
 from mezzanine.pages.admin import PageAdmin
+from mezzanine.utils.static import static_lazy as static
 from mezzanine.utils.urls import admin_url, slugify
 
 
@@ -34,6 +35,26 @@ form_fieldsets = list(form_fieldsets)
 form_fieldsets.insert(1, (_("Email"), {"fields": ("send_email", "email_from",
     "email_copies", "email_subject", "email_message")}))
 
+inline_field_excludes = []
+if not settings.FORMS_USE_HTML5:
+    inline_field_excludes += ["placeholder_text"]
+
+
+class FieldAdminInlineForm(forms.ModelForm):
+
+    def __init__(self, *args, **kwargs):
+        """
+        Ensure the label and help_text fields are rendered as text inputs
+        instead of text areas.
+        """
+        super(FieldAdminInlineForm, self).__init__(*args, **kwargs)
+        self.fields["label"].widget = admin.widgets.AdminTextInputWidget()
+        self.fields["help_text"].widget = admin.widgets.AdminTextInputWidget()
+
+    class Meta:
+        model = Field
+        exclude = inline_field_excludes
+
 
 class FieldAdmin(TabularDynamicInlineAdmin):
     """
@@ -41,6 +62,7 @@ class FieldAdmin(TabularDynamicInlineAdmin):
     add dynamic "Add another" link and drag/drop ordering.
     """
     model = Field
+    form = FieldAdminInlineForm
 
 
 class FormAdmin(PageAdmin):
@@ -50,7 +72,7 @@ class FormAdmin(PageAdmin):
     """
 
     class Media:
-        css = {"all": ("mezzanine/css/admin/form.css",)}
+        css = {"all": (static("mezzanine/css/admin/form.css"),)}
 
     inlines = (FieldAdmin,)
     list_display = ("title", "status", "email_copies",)
@@ -66,14 +88,14 @@ class FormAdmin(PageAdmin):
         Add the entries view to urls.
         """
         urls = super(FormAdmin, self).get_urls()
-        extra_urls = patterns("",
+        extra_urls = [
             url("^(?P<form_id>\d+)/entries/$",
                 self.admin_site.admin_view(self.entries_view),
                 name="form_entries"),
             url("^file/(?P<field_entry_id>\d+)/$",
                 self.admin_site.admin_view(self.file_view),
                 name="form_file"),
-        )
+        ]
         return extra_urls + urls
 
     def entries_view(self, request, form_id):
@@ -128,7 +150,7 @@ class FormAdmin(PageAdmin):
                    "opts": self.model._meta, "original": form,
                    "can_delete_entries": can_delete_entries,
                    "submitted": submitted}
-        return render_to_response(template, context, RequestContext(request))
+        return render(request, template, context)
 
     def file_view(self, request, field_entry_id):
         """

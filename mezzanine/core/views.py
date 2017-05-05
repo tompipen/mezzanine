@@ -2,8 +2,12 @@ from __future__ import absolute_import, unicode_literals
 from future.builtins import int, open, str
 
 import os
+import mimetypes
 
 from json import dumps
+
+from django.template.response import TemplateResponse
+
 try:
     from urllib.parse import urljoin, urlparse
 except ImportError:
@@ -19,7 +23,6 @@ from django.core.urlresolvers import reverse
 from django.http import (HttpResponse, HttpResponseServerError,
                          HttpResponseNotFound)
 from django.shortcuts import redirect
-from django.template import RequestContext
 from django.template.loader import get_template
 from django.utils.translation import ugettext_lazy as _
 from django.views.decorators.csrf import requires_csrf_token
@@ -28,9 +31,12 @@ from mezzanine.conf import settings
 from mezzanine.core.forms import get_edit_form
 from mezzanine.core.models import Displayable, SitePermission
 from mezzanine.utils.cache import add_cache_bypass
-from mezzanine.utils.views import is_editable, paginate, render, set_cookie
+from mezzanine.utils.views import is_editable, paginate, set_cookie
 from mezzanine.utils.sites import has_site_permission
 from mezzanine.utils.urls import next_url
+
+
+mimetypes.init()
 
 
 def set_device(request, device=""):
@@ -79,7 +85,7 @@ def direct_to_template(request, template, extra_context=None, **kwargs):
     for (key, value) in context.items():
         if callable(value):
             context[key] = value()
-    return render(request, template, context)
+    return TemplateResponse(request, template, context)
 
 
 @staff_member_required
@@ -127,7 +133,7 @@ def search(request, template="search_results.html", extra_context=None):
     context = {"query": query, "results": paginated,
                "search_type": search_type}
     context.update(extra_context or {})
-    return render(request, template, context)
+    return TemplateResponse(request, template, context)
 
 
 @staff_member_required
@@ -148,7 +154,9 @@ def static_proxy(request):
         if url.startswith(prefix):
             url = url.replace(prefix, "", 1)
     response = ""
-    content_type = ""
+    (content_type, encoding) = mimetypes.guess_type(url)
+    if content_type is None:
+        content_type = "application/octet-stream"
     path = finders.find(url)
     if path:
         if isinstance(path, (list, tuple)):
@@ -161,13 +169,14 @@ def static_proxy(request):
             if not urlparse(static_url).scheme:
                 static_url = urljoin(host, static_url)
             base_tag = "<base href='%s'>" % static_url
-            content_type = "text/html"
             with open(path, "r") as f:
                 response = f.read().replace("<head>", "<head>" + base_tag)
         else:
-            content_type = "application/octet-stream"
-            with open(path, "rb") as f:
-                response = f.read()
+            try:
+                with open(path, "rb") as f:
+                    response = f.read()
+            except IOError:
+                return HttpResponseNotFound()
     return HttpResponse(response, content_type=content_type)
 
 
@@ -203,12 +212,12 @@ def page_not_found(request, template_name="errors/404.html"):
     """
     Mimics Django's 404 handler but with a different template path.
     """
-    context = RequestContext(request, {
+    context = {
         "STATIC_URL": settings.STATIC_URL,
         "request_path": request.path,
-    })
+    }
     t = get_template(template_name)
-    return HttpResponseNotFound(t.render(context))
+    return HttpResponseNotFound(t.render(context, request))
 
 
 @requires_csrf_token
@@ -217,6 +226,6 @@ def server_error(request, template_name="errors/500.html"):
     Mimics Django's error handler but adds ``STATIC_URL`` to the
     context.
     """
-    context = RequestContext(request, {"STATIC_URL": settings.STATIC_URL})
+    context = {"STATIC_URL": settings.STATIC_URL}
     t = get_template(template_name)
-    return HttpResponseServerError(t.render(context))
+    return HttpResponseServerError(t.render(context, request))

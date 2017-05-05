@@ -13,12 +13,16 @@ from mezzanine.conf import settings
 from mezzanine.core.templatetags.mezzanine_tags import richtext_filters
 from mezzanine.core.request import current_request
 from mezzanine.generic.models import Keyword
-from mezzanine.pages.models import Page
 from mezzanine.utils.html import absolute_urls
 from mezzanine.utils.sites import current_site_id
 
 
 User = get_user_model()
+
+try:
+    unicode
+except NameError:  # Python 3
+    unicode = lambda s: s
 
 
 class PostsRSS(Feed):
@@ -38,12 +42,15 @@ class PostsRSS(Feed):
         self.username = kwargs.pop("username", None)
         super(PostsRSS, self).__init__(*args, **kwargs)
         self._public = True
-        try:
-            page = Page.objects.published().get(slug=settings.BLOG_SLUG)
-        except Page.DoesNotExist:
-            page = None
-        else:
-            self._public = not page.login_required
+        page = None
+        if "mezzanine.pages" in settings.INSTALLED_APPS:
+            from mezzanine.pages.models import Page
+            try:
+                page = Page.objects.published().get(slug=settings.BLOG_SLUG)
+            except Page.DoesNotExist:
+                pass
+            else:
+                self._public = not page.login_required
         if self._public:
             if page is not None:
                 self._title = "%s | %s" % (page.title, settings.SITE_TITLE)
@@ -61,10 +68,10 @@ class PostsRSS(Feed):
         return add_domain(self._site.domain, link, self._request.is_secure())
 
     def title(self):
-        return self._title
+        return unicode(self._title)
 
     def description(self):
-        return self._description
+        return unicode(self._description)
 
     def link(self):
         return self.add_domain(reverse("blog_post_list"))
@@ -93,7 +100,7 @@ class PostsRSS(Feed):
         absolute_urls_name = "mezzanine.utils.html.absolute_urls"
         if absolute_urls_name not in settings.RICHTEXT_FILTERS:
             description = absolute_urls(description)
-        return description
+        return unicode(description)
 
     def categories(self):
         if not self._public:
@@ -124,6 +131,14 @@ class PostsRSS(Feed):
         if item.featured_image:
             return self.add_domain(item.featured_image.url)
 
+    def item_enclosure_length(self, item):
+        if item.featured_image:
+            return item.featured_image.size
+
+    def item_enclosure_mime_type(self, item):
+        if item.featured_image:
+            return item.featured_image.mimetype[0]
+
 
 class PostsAtom(PostsRSS):
     """
@@ -134,3 +149,6 @@ class PostsAtom(PostsRSS):
 
     def subtitle(self):
         return self.description()
+
+    def item_updateddate(self, item):
+        return item.updated

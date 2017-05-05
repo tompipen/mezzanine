@@ -23,7 +23,7 @@ register_setting(
     editable=False,
     default=(
         (_("Content"), ("pages.Page", "blog.BlogPost",
-           "generic.ThreadedComment", (_("Media Library"), "fb_browse"),)),
+           "generic.ThreadedComment", (_("Media Library"), "media-library"),)),
         (_("Site"), ("sites.Site", "redirects.Redirect", "conf.Setting")),
         (_("Users"), ("auth.User", "auth.Group",)),
     ),
@@ -40,7 +40,9 @@ register_setting(
 
 register_setting(
     name="ADMIN_REMOVAL",
-    description=_("Unregister these models from the admin."),
+    description=_("A sequence of Python dotted paths to models "
+        "(eg: ``['mezzanine.blog.models.BlogPost',]``) that should be "
+        "removed from the admin."),
     editable=False,
     default=(),
 )
@@ -201,7 +203,7 @@ register_setting(
     description=_("Name of the jQuery file found in "
                   "mezzanine/core/static/mezzanine/js/"),
     editable=False,
-    default="jquery-1.7.2.min.js",
+    default="jquery-1.8.3.min.js",
 )
 
 register_setting(
@@ -210,7 +212,7 @@ register_setting(
     description=_("Name of the jQuery UI file found in "
                   "mezzanine/core/static/mezzanine/js/"),
     editable=False,
-    default="jquery-ui-1.8.2.min.js",
+    default="jquery-ui-1.8.24.min.js",
 )
 
 register_setting(
@@ -290,9 +292,9 @@ register_setting(
     description=_("List of inline CSS styles that won't be stripped from "
         "``RichTextField`` instances."),
     editable=False,
-    default=("border", "float", "list-style-type", "margin", "margin-bottom",
-        "margin-left", "margin-right", "margin-top", "padding-left",
-        "text-align", "text-decoration", "vertical-align"),
+    default=("border", "display", "float", "list-style-type", "margin",
+        "margin-bottom", "margin-left", "margin-right", "margin-top",
+        "padding-left", "text-align", "text-decoration", "vertical-align"),
 )
 
 register_setting(
@@ -414,7 +416,7 @@ register_setting(
     description=_("If ``True``, users will be automatically redirected to "
         "HTTPS for the URLs specified by the ``SSL_FORCE_URL_PREFIXES`` "
         "setting."),
-    editable=True,
+    editable=False,
     default=False,
 )
 
@@ -423,7 +425,7 @@ register_setting(
     label=_("Force Host"),
     description=_("Host name that the site should always be accessed via that "
                 "matches the SSL certificate."),
-    editable=True,
+    editable=False,
     default="",
 )
 
@@ -516,6 +518,7 @@ register_setting(
     name="TEMPLATE_ACCESSIBLE_SETTINGS",
     description=_("Sequence of setting names available within templates."),
     editable=False,
+    append=True,
     default=(
         "ACCOUNTS_APPROVAL_REQUIRED", "ACCOUNTS_VERIFICATION_REQUIRED",
         "ADMIN_MENU_COLLAPSED",

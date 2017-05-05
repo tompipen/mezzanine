@@ -11,14 +11,14 @@ from django.core.urlresolvers import reverse
 from django.db.models import ObjectDoesNotExist
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import redirect
+from django.template.response import TemplateResponse
 from django.utils.translation import ugettext_lazy as _
-from django.views.decorators.http import require_POST
 
 from mezzanine.conf import settings
 from mezzanine.generic.forms import ThreadedCommentForm, RatingForm
 from mezzanine.generic.models import Keyword
 from mezzanine.utils.cache import add_cache_bypass
-from mezzanine.utils.views import render, set_cookie, is_spam
+from mezzanine.utils.views import set_cookie, is_spam
 from mezzanine.utils.importing import import_dotted_path
 
 
@@ -39,7 +39,8 @@ def admin_keywords_submit(request):
             if keyword_id not in keyword_ids:
                 keyword_ids.append(keyword_id)
                 titles.append(title)
-    return HttpResponse("%s|%s" % (",".join(keyword_ids), ", ".join(titles)))
+    return HttpResponse("%s|%s" % (",".join(keyword_ids), ", ".join(titles)),
+        content_type='text/plain')
 
 
 def initial_validation(request, prefix):
@@ -64,9 +65,10 @@ def initial_validation(request, prefix):
     redirect_url = ""
     if getattr(settings, login_required_setting_name, False):
         if not request.user.is_authenticated():
-            request.session[posted_session_key] = request.POST
-            error(request, _("You must be logged in. Please log in or "
-                             "sign up to complete this action."))
+            if request.method == "POST":
+                request.session[posted_session_key] = request.POST
+                error(request, _("You must be logged in. Please log in or "
+                                 "sign up to complete this action."))
             redirect_url = "%s?next=%s" % (settings.LOGIN_URL, reverse(prefix))
         elif posted_session_key in request.session:
             post_data = request.session.pop(posted_session_key)
@@ -87,7 +89,6 @@ def initial_validation(request, prefix):
     return obj, post_data
 
 
-@require_POST
 def comment(request, template="generic/comments.html", extra_context=None):
     """
     Handle a ``ThreadedCommentForm`` submission and redirect back to its
@@ -116,11 +117,9 @@ def comment(request, template="generic/comments.html", extra_context=None):
     # Show errors with stand-alone comment form.
     context = {"obj": obj, "posted_comment_form": form}
     context.update(extra_context or {})
-    response = render(request, template, context)
-    return response
+    return TemplateResponse(request, template, context)
 
 
-@require_POST
 def rating(request):
     """
     Handle a ``RatingForm`` submission and redirect back to its
